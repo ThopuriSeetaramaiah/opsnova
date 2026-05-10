@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { k8sApi } from '../api/endpoints';
@@ -9,11 +9,14 @@ import { Server, Cpu, Activity } from 'lucide-react';
 export default function Kubernetes() {
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null);
 
-  const { data: clusters = [] } = useQuery({
+  const { data: clusters = [] } = useQuery<any[]>({
     queryKey: ['clusters'],
     queryFn: () => k8sApi.getClusters().then(r => r.data),
-    onSuccess: (data: any[]) => { if (data.length && !selectedCluster) setSelectedCluster(data[0].id); },
-  } as any);
+  });
+
+  useEffect(() => {
+    if (clusters.length && !selectedCluster) setSelectedCluster(clusters[0].id);
+  }, [clusters]);
 
   const { data: nodes = [] } = useQuery({
     queryKey: ['nodes', selectedCluster],
