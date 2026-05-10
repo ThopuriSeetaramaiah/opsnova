@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsnova-backend
+  labels:
+    app: opsnova-backend
+spec:
+  replicas: {{ .Values.replicaCount.backend }}
+  selector:
+    matchLabels:
+      app: opsnova-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: opsnova-backend
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"
+          imagePullPolicy: {{ .Values.image.backend.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: opsnova-config
+            - secretRef:
+                name: opsnova-secrets
+          resources:
+            requests:
+              cpu: {{ .Values.resources.backend.requests.cpu }}
+              memory: {{ .Values.resources.backend.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.backend.limits.cpu }}
+              memory: {{ .Values.resources.backend.limits.memory }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5

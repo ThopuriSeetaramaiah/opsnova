@@ -1,0 +1,120 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths: [backend/**]
+  pull_request:
+    branches: [main]
+    paths: [backend/**]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: opsnova-backend
+  EKS_CLUSTER: opsnova-eks
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check backend/app
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: opsnova_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r backend/requirements.txt pytest pytest-asyncio httpx
+      - run: pytest backend/tests/ -v
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/opsnova_test
+          SECRET_KEY: test-secret-key-32-chars-minimum
+
+  build-push:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $REGISTRY/$ECR_REPOSITORY:latest ./backend
+          docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build.outputs.image }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install opsnova ./helm/opsnova \
+            --namespace opsnova \
+            --create-namespace \
+            --set image.backend.tag=${{ github.sha }} \
+            --set secrets.secretKey=${{ secrets.SECRET_KEY }} \
+            --set secrets.dbPassword=${{ secrets.DB_PASSWORD }} \
+            --set secrets.openaiApiKey=${{ secrets.OPENAI_API_KEY }} \
+            --wait --timeout 5m

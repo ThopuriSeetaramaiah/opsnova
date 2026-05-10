@@ -1,0 +1,63 @@
+replicaCount:
+  backend: 2
+  frontend: 2
+
+image:
+  backend:
+    repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/opsnova-backend
+    tag: latest
+    pullPolicy: Always
+  frontend:
+    repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/opsnova-frontend
+    tag: latest
+    pullPolicy: Always
+
+service:
+  backend:
+    type: ClusterIP
+    port: 8000
+  frontend:
+    type: ClusterIP
+    port: 80
+
+ingress:
+  enabled: true
+  className: alb
+  host: opsnova.example.com
+  tls: true
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: ""
+
+resources:
+  backend:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+hpa:
+  minReplicas: 2
+  maxReplicas: 10
+  cpuUtilization: 70
+
+config:
+  appEnv: production
+  awsRegion: us-east-1
+
+secrets:
+  dbPassword: ""
+  redisUrl: ""
+  secretKey: ""
+  openaiApiKey: ""

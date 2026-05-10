@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opsnova-config
+data:
+  APP_ENV: {{ .Values.config.appEnv }}
+  AWS_DEFAULT_REGION: {{ .Values.config.awsRegion }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: opsnova-secrets
+type: Opaque
+stringData:
+  DATABASE_URL: {{ .Values.secrets.dbPassword | quote }}
+  REDIS_URL: {{ .Values.secrets.redisUrl | quote }}
+  SECRET_KEY: {{ .Values.secrets.secretKey | quote }}
+  OPENAI_API_KEY: {{ .Values.secrets.openaiApiKey | quote }}
